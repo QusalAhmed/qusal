@@ -1,0 +1,59 @@
+# =============================================================================
+# PowerSync Sync Streams Configuration
+# =============================================================================
+# Edition 3 — Sync Streams (GA, recommended for all new projects)
+#
+# Architecture:
+#   - Global streams: No WHERE clause → same data synced to all clients.
+#     Used for shared knowledge (words, definitions, examples, tags, flashcards).
+#   - User-scoped streams: WHERE user_id = auth.user_id() → each client only
+#     receives its own data. Used for personal learning state.
+#
+# All streams use auto_subscribe: true for offline-first behavior.
+# Data is available immediately upon connection, before explicit subscription.
+# =============================================================================
+
+config:
+  edition: 3
+
+streams:
+  # -----------------------------------------------------------------------
+  # Global Streams — Shared knowledge accessible to all users
+  # -----------------------------------------------------------------------
+
+  words:
+    auto_subscribe: true
+    query: SELECT * FROM words
+
+  definitions:
+    auto_subscribe: true
+    query: SELECT * FROM definitions
+
+  examples:
+    auto_subscribe: true
+    query: SELECT * FROM examples
+
+  tags:
+    auto_subscribe: true
+    query: SELECT * FROM tags
+
+  word_tags:
+    auto_subscribe: true
+    query: SELECT * FROM word_tags
+
+  flashcards:
+    auto_subscribe: true
+    query: SELECT * FROM flashcards
+
+  # -----------------------------------------------------------------------
+  # User-Scoped Streams — Private to each authenticated user
+  # -----------------------------------------------------------------------
+  # auth.user_id() ensures a client NEVER receives another user's FSRS state.
+
+  user_flashcard_states:
+    auto_subscribe: true
+    query: SELECT * FROM user_flashcard_states WHERE user_id = auth.user_id()
+
+  review_logs:
+    auto_subscribe: true
+    query: SELECT * FROM review_logs WHERE user_id = auth.user_id()
