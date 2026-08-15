@@ -1,69 +1,342 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+// =============================================================================
+// Public Dashboard Page
+// =============================================================================
+// The main landing/dashboard page. Accessible to all users (including anonymous).
+// Shows vocabulary stats and deck overviews.
+// For authenticated users, shows personal FSRS deck state.
+// =============================================================================
+
+import { motion } from "framer-motion";
+import {
+  BookOpen,
+  Brain,
+  Layers,
+  Tag,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
+import { usePowerSyncQuery } from "@/hooks/usePowerSyncQuery";
+import { useAuth } from "@/hooks/useAuth";
+import { AppShell } from "@/components/layout/AppShell";
+import type { ReactNode } from "react";
+
+// ---------------------------------------------------------------------------
+// Stats Card Component
+// ---------------------------------------------------------------------------
+
+interface StatsCardProps {
+  title: string;
+  value: string | number;
+  icon: ReactNode;
+  description?: string;
+  gradient: string;
+  delay: number;
+}
+
+function StatsCard({
+  title,
+  value,
+  icon,
+  description,
+  gradient,
+  delay,
+}: StatsCardProps) {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.4, ease: "easeOut" }}
+      className="card-hover rounded-2xl bg-[var(--color-surface-raised)] border border-[var(--color-border)] p-6 relative overflow-hidden"
+    >
+      {/* Background gradient glow */}
+      <div
+        className={`absolute top-0 right-0 w-32 h-32 ${gradient} opacity-10 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2`}
+      />
+
+      <div className="relative">
+        <div className="flex items-center justify-between mb-4">
+          <div className="p-2.5 rounded-xl bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)]">
+            {icon}
+          </div>
+        </div>
+
+        <div className="text-3xl font-bold text-white mb-1 tabular-nums">
+          {value}
+        </div>
+        <div className="text-sm text-[var(--color-text-secondary)]">
+          {title}
+        </div>
+        {description && (
+          <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
+            {description}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deck Preview Card
+// ---------------------------------------------------------------------------
+
+interface DeckPreviewProps {
+  title: string;
+  description: string;
+  dueCount: number;
+  totalCount: number;
+  icon: ReactNode;
+  color: string;
+  delay: number;
+}
+
+function DeckPreview({
+  title,
+  description,
+  dueCount,
+  totalCount,
+  icon,
+  color,
+  delay,
+}: DeckPreviewProps) {
+  const progress = totalCount > 0 ? ((totalCount - dueCount) / totalCount) * 100 : 0;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.4, ease: "easeOut" }}
+      className="card-hover rounded-2xl bg-[var(--color-surface-raised)] border border-[var(--color-border)] p-6"
+    >
+      <div className="flex items-start gap-4">
+        <div
+          className={`p-3 rounded-xl ${color} bg-opacity-10 border border-[var(--color-border-subtle)]`}
+        >
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-semibold text-white mb-1">{title}</h3>
+          <p className="text-xs text-[var(--color-text-tertiary)] mb-3">
+            {description}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+
+          {/* Progress bar */}
+          <div className="h-1.5 bg-[var(--color-surface-overlay)] rounded-full overflow-hidden mb-2">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${progress}%` }}
+              transition={{ delay: delay + 0.3, duration: 0.6, ease: "easeOut" }}
+              className={`h-full rounded-full bg-gradient-to-r ${
+                color.includes("indigo")
+                  ? "from-indigo-500 to-violet-500"
+                  : color.includes("emerald")
+                    ? "from-emerald-500 to-teal-500"
+                    : "from-amber-500 to-orange-500"
+              }`}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
+
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[var(--color-text-tertiary)]">
+              {totalCount > 0
+                ? `${totalCount - dueCount} / ${totalCount} reviewed`
+                : "No cards yet"}
+            </span>
+            {dueCount > 0 && (
+              <span className="text-amber-400 font-medium">
+                {dueCount} due
+              </span>
+            )}
+          </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard Page
+// ---------------------------------------------------------------------------
+
+export default function DashboardPage() {
+  const { user } = useAuth();
+
+  // Query word count from local PowerSync DB
+  const { data: wordCountResult } = usePowerSyncQuery<{ count: number }>(
+    "SELECT COUNT(*) as count FROM words WHERE deleted_at IS NULL"
+  );
+  const wordCount = wordCountResult[0]?.count ?? 0;
+
+  // Query definition count
+  const { data: defCountResult } = usePowerSyncQuery<{ count: number }>(
+    "SELECT COUNT(*) as count FROM definitions WHERE deleted_at IS NULL"
+  );
+  const definitionCount = defCountResult[0]?.count ?? 0;
+
+  // Query tag count
+  const { data: tagCountResult } = usePowerSyncQuery<{ count: number }>(
+    "SELECT COUNT(*) as count FROM tags WHERE deleted_at IS NULL"
+  );
+  const tagCount = tagCountResult[0]?.count ?? 0;
+
+  // Query flashcard count
+  const { data: flashcardCountResult } = usePowerSyncQuery<{ count: number }>(
+    "SELECT COUNT(*) as count FROM flashcards WHERE deleted_at IS NULL AND is_active = 1"
+  );
+  const flashcardCount = flashcardCountResult[0]?.count ?? 0;
+
+  // Query due cards per deck (authenticated users only)
+  const { data: dueWordToMeaning } = usePowerSyncQuery<{ count: number }>(
+    user
+      ? `SELECT COUNT(*) as count FROM user_flashcard_states ufs
+         JOIN flashcards f ON ufs.flashcard_id = f.id
+         WHERE ufs.user_id = ? AND ufs.due_date <= datetime('now') AND f.quiz_mode = 'WORD_TO_MEANING' AND f.deleted_at IS NULL`
+      : "SELECT 0 as count",
+    user ? [user.id] : []
+  );
+
+  const { data: dueMeaningToWord } = usePowerSyncQuery<{ count: number }>(
+    user
+      ? `SELECT COUNT(*) as count FROM user_flashcard_states ufs
+         JOIN flashcards f ON ufs.flashcard_id = f.id
+         WHERE ufs.user_id = ? AND ufs.due_date <= datetime('now') AND f.quiz_mode = 'MEANING_TO_WORD' AND f.deleted_at IS NULL`
+      : "SELECT 0 as count",
+    user ? [user.id] : []
+  );
+
+  const { data: dueMeaningToSpelling } = usePowerSyncQuery<{ count: number }>(
+    user
+      ? `SELECT COUNT(*) as count FROM user_flashcard_states ufs
+         JOIN flashcards f ON ufs.flashcard_id = f.id
+         WHERE ufs.user_id = ? AND ufs.due_date <= datetime('now') AND f.quiz_mode = 'MEANING_TO_SPELLING' AND f.deleted_at IS NULL`
+      : "SELECT 0 as count",
+    user ? [user.id] : []
+  );
+
+  return (
+    <AppShell>
+      <div className="space-y-8">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-2">
+            {user ? "Your Dashboard" : "Vocabulary Explorer"}
+          </h1>
+          <p className="text-[var(--color-text-secondary)]">
+            {user
+              ? "Track your learning progress across all vocabulary decks"
+              : "Browse the collaborative vocabulary knowledge base"}
+          </p>
+        </motion.div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatsCard
+            title="Words"
+            value={wordCount}
+            icon={<BookOpen size={20} className="text-indigo-400" />}
+            gradient="bg-indigo-500"
+            delay={0.1}
+          />
+          <StatsCard
+            title="Definitions"
+            value={definitionCount}
+            icon={<Layers size={20} className="text-violet-400" />}
+            gradient="bg-violet-500"
+            delay={0.15}
+          />
+          <StatsCard
+            title="Tags"
+            value={tagCount}
+            icon={<Tag size={20} className="text-emerald-400" />}
+            gradient="bg-emerald-500"
+            delay={0.2}
+          />
+          <StatsCard
+            title="Active Flashcards"
+            value={flashcardCount}
+            icon={<Zap size={20} className="text-amber-400" />}
+            gradient="bg-amber-500"
+            delay={0.25}
+          />
+        </div>
+
+        {/* Decks Section */}
+        {user && (
+          <div>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="flex items-center gap-2 mb-4"
+            >
+              <Brain size={20} className="text-indigo-400" />
+              <h2 className="text-xl font-semibold text-white">
+                Learning Decks
+              </h2>
+            </motion.div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <DeckPreview
+                title="Word → Meaning"
+                description="See the word, recall its meaning"
+                dueCount={dueWordToMeaning?.[0]?.count ?? 0}
+                totalCount={flashcardCount}
+                icon={<BookOpen size={20} className="text-indigo-400" />}
+                color="bg-indigo-500/10"
+                delay={0.35}
+              />
+              <DeckPreview
+                title="Meaning → Word"
+                description="See the meaning, recall the word"
+                dueCount={dueMeaningToWord?.[0]?.count ?? 0}
+                totalCount={flashcardCount}
+                icon={<TrendingUp size={20} className="text-emerald-400" />}
+                color="bg-emerald-500/10"
+                delay={0.4}
+              />
+              <DeckPreview
+                title="Meaning → Spelling"
+                description="See the meaning, type the correct spelling"
+                dueCount={dueMeaningToSpelling?.[0]?.count ?? 0}
+                totalCount={flashcardCount}
+                icon={<Zap size={20} className="text-amber-400" />}
+                color="bg-amber-500/10"
+                delay={0.45}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Empty State for Anonymous */}
+        {!user && wordCount === 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-center py-16"
+          >
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center mx-auto mb-6 border border-[var(--color-border)]">
+              <BookOpen
+                size={32}
+                className="text-[var(--color-text-tertiary)]"
+              />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              No words yet
+            </h3>
+            <p className="text-sm text-[var(--color-text-tertiary)] max-w-sm mx-auto">
+              This vocabulary knowledge base is empty. Sign in to start adding
+              words and definitions.
+            </p>
+          </motion.div>
+        )}
+      </div>
+    </AppShell>
   );
 }
