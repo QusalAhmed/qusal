@@ -57,21 +57,209 @@ CREATE TYPE public.part_of_speech AS ENUM (
 );
 
 -- ---------------------------------------------------------------------------
--- 3. Helper Functions
+-- 3. Tables
 -- ---------------------------------------------------------------------------
 
--- Returns the role for a given user UUID.
+-- 3.1 Profiles
+-- References auth.users(id). No soft delete — tied to auth lifecycle.
+CREATE TABLE public.profiles (
+  id         UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role       public.app_role NOT NULL DEFAULT 'CONTRIBUTOR',
+  created_at TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.profiles IS 'Public user profiles linked to auth.users. Role determines application-level permissions.';
+
+-- 3.2 Tags
+CREATE TABLE public.tags (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT        NOT NULL,
+  normalized_name TEXT        NOT NULL,
+  color           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at      TIMESTAMPTZ,
+  version         INTEGER     NOT NULL DEFAULT 1,
+
+  CONSTRAINT tags_normalized_name_unique UNIQUE (normalized_name)
+);
+
+COMMENT ON TABLE public.tags IS 'Global vocabulary tags. normalized_name is LOWER(TRIM(name)) for duplicate detection.';
+
+-- 3.3 Words
+CREATE TABLE public.words (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  word            TEXT        NOT NULL,
+  normalized_word TEXT        NOT NULL,
+  phonetics       TEXT,
+  audio_url       TEXT,
+  created_by      UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at      TIMESTAMPTZ,
+  version         INTEGER     NOT NULL DEFAULT 1,
+
+  CONSTRAINT words_normalized_word_unique UNIQUE (normalized_word)
+);
+
+COMMENT ON TABLE public.words IS 'Global vocabulary words. normalized_word is LOWER(TRIM(word)) for case-insensitive duplicate detection.';
+
+-- 3.4 Word Tags (junction)
+CREATE TABLE public.word_tags (
+  word_id UUID NOT NULL REFERENCES public.words(id) ON DELETE CASCADE,
+  tag_id  UUID NOT NULL REFERENCES public.tags(id)  ON DELETE CASCADE,
+
+  PRIMARY KEY (word_id, tag_id)
+);
+
+COMMENT ON TABLE public.word_tags IS 'Many-to-many junction between words and tags.';
+
+-- 3.5 Definitions
+CREATE TABLE public.definitions (
+  id                         UUID               PRIMARY KEY DEFAULT gen_random_uuid(),
+  word_id                    UUID               NOT NULL REFERENCES public.words(id) ON DELETE CASCADE,
+  meaning                    TEXT               NOT NULL,
+  part_of_speech             public.part_of_speech NOT NULL,
+  tiptap_note                JSONB,
+  requested_ai_example_count INTEGER            NOT NULL DEFAULT 0,
+  created_by                 UUID               REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at                 TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
+  updated_at                 TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
+  deleted_at                 TIMESTAMPTZ,
+  version                    INTEGER            NOT NULL DEFAULT 1
+);
+
+COMMENT ON TABLE public.definitions IS 'Word definitions with optional rich-text notes and AI example configuration.';
+
+-- 3.6 Examples
+CREATE TABLE public.examples (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  definition_id   UUID        NOT NULL REFERENCES public.definitions(id) ON DELETE CASCADE,
+  sentence        TEXT        NOT NULL,
+  is_ai_generated BOOLEAN     NOT NULL DEFAULT FALSE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at      TIMESTAMPTZ,
+  version         INTEGER     NOT NULL DEFAULT 1
+);
+
+COMMENT ON TABLE public.examples IS 'Example sentences for definitions. May be human-authored or AI-generated.';
+
+-- 3.7 Flashcards (global quiz definitions, NOT user progress)
+CREATE TABLE public.flashcards (
+  id            UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+  definition_id UUID            NOT NULL REFERENCES public.definitions(id) ON DELETE CASCADE,
+  quiz_mode     public.quiz_mode NOT NULL,
+  is_active     BOOLEAN         NOT NULL DEFAULT TRUE,
+  created_at    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+  deleted_at    TIMESTAMPTZ,
+  version       INTEGER         NOT NULL DEFAULT 1,
+
+  CONSTRAINT flashcards_definition_quiz_unique UNIQUE (definition_id, quiz_mode)
+);
+
+COMMENT ON TABLE public.flashcards IS 'Global flashcard definitions. Each definition has one flashcard per quiz_mode. Does NOT contain user progress.';
+
+-- 3.8 User Flashcard States (per-user FSRS state)
+CREATE TABLE public.user_flashcard_states (
+  user_id        UUID             NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  flashcard_id   UUID             NOT NULL REFERENCES public.flashcards(id) ON DELETE CASCADE,
+  due_date       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  stability      REAL             NOT NULL DEFAULT 0,
+  difficulty     REAL             NOT NULL DEFAULT 0,
+  elapsed_days   REAL             NOT NULL DEFAULT 0,
+  scheduled_days REAL             NOT NULL DEFAULT 0,
+  reps           INTEGER          NOT NULL DEFAULT 0,
+  lapses         INTEGER          NOT NULL DEFAULT 0,
+  state          public.card_state NOT NULL DEFAULT 'New',
+  created_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  version        INTEGER          NOT NULL DEFAULT 1,
+
+  PRIMARY KEY (user_id, flashcard_id)
+);
+
+COMMENT ON TABLE public.user_flashcard_states IS 'Per-user FSRS scheduling state. Each user has at most one state per flashcard. Never shared between users.';
+
+-- 3.9 Review Logs (per-user review history)
+CREATE TABLE public.review_logs (
+  id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  flashcard_id         UUID        NOT NULL REFERENCES public.flashcards(id) ON DELETE CASCADE,
+  rating               INTEGER     NOT NULL,
+  state                public.card_state NOT NULL,
+  review_time          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  previous_stability   REAL,
+  new_stability        REAL,
+  previous_difficulty  REAL,
+  new_difficulty       REAL,
+  review_duration_ms   INTEGER,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE public.review_logs IS 'Immutable per-user review history. Records every FSRS grading event for analytics and audit.';
+
+-- ---------------------------------------------------------------------------
+-- 4. Indexes
+-- ---------------------------------------------------------------------------
+
+-- Words
+CREATE INDEX idx_words_deleted    ON public.words (deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_words_created_by ON public.words (created_by);
+
+-- Tags
+CREATE INDEX idx_tags_deleted    ON public.tags (deleted_at) WHERE deleted_at IS NULL;
+
+-- Word Tags (reverse lookup)
+CREATE INDEX idx_word_tags_tag ON public.word_tags (tag_id);
+
+-- Definitions
+CREATE INDEX idx_definitions_word_id ON public.definitions (word_id);
+CREATE INDEX idx_definitions_deleted ON public.definitions (deleted_at) WHERE deleted_at IS NULL;
+
+-- Examples
+CREATE INDEX idx_examples_definition_id ON public.examples (definition_id);
+CREATE INDEX idx_examples_deleted       ON public.examples (deleted_at) WHERE deleted_at IS NULL;
+
+-- Flashcards
+CREATE INDEX idx_flashcards_definition_id ON public.flashcards (definition_id);
+CREATE INDEX idx_flashcards_deleted       ON public.flashcards (deleted_at) WHERE deleted_at IS NULL;
+
+-- User Flashcard States
+CREATE INDEX idx_ufs_user_id  ON public.user_flashcard_states (user_id);
+CREATE INDEX idx_ufs_due_date ON public.user_flashcard_states (user_id, due_date);
+
+-- Review Logs
+CREATE INDEX idx_review_logs_user      ON public.review_logs (user_id, flashcard_id);
+CREATE INDEX idx_review_logs_timestamp ON public.review_logs (user_id, review_time);
+
+-- ---------------------------------------------------------------------------
+-- 5. Helper Functions
+-- ---------------------------------------------------------------------------
+
+-- Returns the role of the currently authenticated user.
 -- Used by RLS policies to check admin/contributor status.
--- Uses (SELECT ...) pattern to evaluate once per query, not per row.
-CREATE OR REPLACE FUNCTION public.get_user_role(user_uuid UUID)
+-- This function intentionally has no UUID argument so callers cannot use it
+-- to probe another user's role.
+CREATE OR REPLACE FUNCTION public.get_current_user_role()
 RETURNS public.app_role
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
-  SELECT role FROM public.profiles WHERE id = user_uuid;
+  SELECT role
+  FROM public.profiles
+  WHERE id = (SELECT auth.uid());
 $$;
+
+-- This helper is used internally by authenticated RLS policies.
+-- It is intentionally callable only by authenticated clients.
+REVOKE EXECUTE ON FUNCTION public.get_current_user_role() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_current_user_role() FROM anon;
+GRANT EXECUTE ON FUNCTION public.get_current_user_role() TO authenticated;
 
 -- Trigger function: auto-create a profiles row when a new auth.users row is inserted.
 -- Defaults to CONTRIBUTOR role. The first admin must be promoted manually.
@@ -108,187 +296,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
--- ---------------------------------------------------------------------------
--- 4. Tables
--- ---------------------------------------------------------------------------
-
--- 4.1 Profiles
--- References auth.users(id). No soft delete — tied to auth lifecycle.
-CREATE TABLE public.profiles (
-  id         UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role       public.app_role NOT NULL DEFAULT 'CONTRIBUTOR',
-  created_at TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ     NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE public.profiles IS 'Public user profiles linked to auth.users. Role determines application-level permissions.';
-
--- 4.2 Tags
-CREATE TABLE public.tags (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            TEXT        NOT NULL,
-  normalized_name TEXT        NOT NULL,
-  color           TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at      TIMESTAMPTZ,
-  version         INTEGER     NOT NULL DEFAULT 1,
-
-  CONSTRAINT tags_normalized_name_unique UNIQUE (normalized_name)
-);
-
-COMMENT ON TABLE public.tags IS 'Global vocabulary tags. normalized_name is LOWER(TRIM(name)) for duplicate detection.';
-
--- 4.3 Words
-CREATE TABLE public.words (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  word            TEXT        NOT NULL,
-  normalized_word TEXT        NOT NULL,
-  phonetics       TEXT,
-  audio_url       TEXT,
-  created_by      UUID        REFERENCES auth.users(id) ON DELETE SET NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at      TIMESTAMPTZ,
-  version         INTEGER     NOT NULL DEFAULT 1,
-
-  CONSTRAINT words_normalized_word_unique UNIQUE (normalized_word)
-);
-
-COMMENT ON TABLE public.words IS 'Global vocabulary words. normalized_word is LOWER(TRIM(word)) for case-insensitive duplicate detection.';
-
--- 4.4 Word Tags (junction)
-CREATE TABLE public.word_tags (
-  word_id UUID NOT NULL REFERENCES public.words(id) ON DELETE CASCADE,
-  tag_id  UUID NOT NULL REFERENCES public.tags(id)  ON DELETE CASCADE,
-
-  PRIMARY KEY (word_id, tag_id)
-);
-
-COMMENT ON TABLE public.word_tags IS 'Many-to-many junction between words and tags.';
-
--- 4.5 Definitions
-CREATE TABLE public.definitions (
-  id                         UUID               PRIMARY KEY DEFAULT gen_random_uuid(),
-  word_id                    UUID               NOT NULL REFERENCES public.words(id) ON DELETE CASCADE,
-  meaning                    TEXT               NOT NULL,
-  part_of_speech             public.part_of_speech NOT NULL,
-  tiptap_note                JSONB,
-  requested_ai_example_count INTEGER            NOT NULL DEFAULT 0,
-  created_by                 UUID               REFERENCES auth.users(id) ON DELETE SET NULL,
-  created_at                 TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
-  updated_at                 TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
-  deleted_at                 TIMESTAMPTZ,
-  version                    INTEGER            NOT NULL DEFAULT 1
-);
-
-COMMENT ON TABLE public.definitions IS 'Word definitions with optional rich-text notes and AI example configuration.';
-
--- 4.6 Examples
-CREATE TABLE public.examples (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  definition_id   UUID        NOT NULL REFERENCES public.definitions(id) ON DELETE CASCADE,
-  sentence        TEXT        NOT NULL,
-  is_ai_generated BOOLEAN     NOT NULL DEFAULT FALSE,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at      TIMESTAMPTZ,
-  version         INTEGER     NOT NULL DEFAULT 1
-);
-
-COMMENT ON TABLE public.examples IS 'Example sentences for definitions. May be human-authored or AI-generated.';
-
--- 4.7 Flashcards (global quiz definitions, NOT user progress)
-CREATE TABLE public.flashcards (
-  id            UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
-  definition_id UUID            NOT NULL REFERENCES public.definitions(id) ON DELETE CASCADE,
-  quiz_mode     public.quiz_mode NOT NULL,
-  is_active     BOOLEAN         NOT NULL DEFAULT TRUE,
-  created_at    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-  deleted_at    TIMESTAMPTZ,
-  version       INTEGER         NOT NULL DEFAULT 1,
-
-  CONSTRAINT flashcards_definition_quiz_unique UNIQUE (definition_id, quiz_mode)
-);
-
-COMMENT ON TABLE public.flashcards IS 'Global flashcard definitions. Each definition has one flashcard per quiz_mode. Does NOT contain user progress.';
-
--- 4.8 User Flashcard States (per-user FSRS state)
-CREATE TABLE public.user_flashcard_states (
-  user_id        UUID             NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  flashcard_id   UUID             NOT NULL REFERENCES public.flashcards(id) ON DELETE CASCADE,
-  due_date       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-  stability      REAL             NOT NULL DEFAULT 0,
-  difficulty     REAL             NOT NULL DEFAULT 0,
-  elapsed_days   REAL             NOT NULL DEFAULT 0,
-  scheduled_days REAL             NOT NULL DEFAULT 0,
-  reps           INTEGER          NOT NULL DEFAULT 0,
-  lapses         INTEGER          NOT NULL DEFAULT 0,
-  state          public.card_state NOT NULL DEFAULT 'New',
-  created_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-  version        INTEGER          NOT NULL DEFAULT 1,
-
-  PRIMARY KEY (user_id, flashcard_id)
-);
-
-COMMENT ON TABLE public.user_flashcard_states IS 'Per-user FSRS scheduling state. Each user has at most one state per flashcard. Never shared between users.';
-
--- 4.9 Review Logs (per-user review history)
-CREATE TABLE public.review_logs (
-  id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id              UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  flashcard_id         UUID        NOT NULL REFERENCES public.flashcards(id) ON DELETE CASCADE,
-  rating               INTEGER     NOT NULL,
-  state                public.card_state NOT NULL,
-  review_time          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  previous_stability   REAL,
-  new_stability        REAL,
-  previous_difficulty  REAL,
-  new_difficulty       REAL,
-  review_duration_ms   INTEGER,
-  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE public.review_logs IS 'Immutable per-user review history. Records every FSRS grading event for analytics and audit.';
-
--- ---------------------------------------------------------------------------
--- 5. Indexes
--- ---------------------------------------------------------------------------
-
--- Words
-CREATE INDEX idx_words_normalized ON public.words (normalized_word);
-CREATE INDEX idx_words_deleted    ON public.words (deleted_at) WHERE deleted_at IS NULL;
-CREATE INDEX idx_words_created_by ON public.words (created_by);
-
--- Tags
-CREATE INDEX idx_tags_normalized ON public.tags (normalized_name);
-CREATE INDEX idx_tags_deleted    ON public.tags (deleted_at) WHERE deleted_at IS NULL;
-
--- Word Tags (reverse lookup)
-CREATE INDEX idx_word_tags_tag ON public.word_tags (tag_id);
-
--- Definitions
-CREATE INDEX idx_definitions_word_id ON public.definitions (word_id);
-CREATE INDEX idx_definitions_deleted ON public.definitions (deleted_at) WHERE deleted_at IS NULL;
-
--- Examples
-CREATE INDEX idx_examples_definition_id ON public.examples (definition_id);
-CREATE INDEX idx_examples_deleted       ON public.examples (deleted_at) WHERE deleted_at IS NULL;
-
--- Flashcards
-CREATE INDEX idx_flashcards_definition_id ON public.flashcards (definition_id);
-CREATE INDEX idx_flashcards_deleted       ON public.flashcards (deleted_at) WHERE deleted_at IS NULL;
-
--- User Flashcard States
-CREATE INDEX idx_ufs_user_id  ON public.user_flashcard_states (user_id);
-CREATE INDEX idx_ufs_due_date ON public.user_flashcard_states (user_id, due_date);
-
--- Review Logs
-CREATE INDEX idx_review_logs_user      ON public.review_logs (user_id, flashcard_id);
-CREATE INDEX idx_review_logs_timestamp ON public.review_logs (user_id, review_time);
 
 -- ---------------------------------------------------------------------------
 -- 6. Triggers
@@ -329,19 +336,14 @@ CREATE POLICY profiles_select_own
   TO authenticated
   USING (id = (SELECT auth.uid()));
 
--- Authenticated users can update their own profile (but NOT their role)
--- Role changes are handled by admin server actions using the service role key
-CREATE POLICY profiles_update_own
-  ON public.profiles FOR UPDATE
-  TO authenticated
-  USING (id = (SELECT auth.uid()))
-  WITH CHECK (id = (SELECT auth.uid()));
+-- Profiles are intentionally not directly updateable by normal clients.
+-- Role changes are handled by secure server-side admin operations.
 
 -- Admins can read all profiles (for user management)
 CREATE POLICY profiles_select_admin
   ON public.profiles FOR SELECT
   TO authenticated
-  USING ((SELECT public.get_user_role((SELECT auth.uid()))) = 'ADMIN');
+  USING ((SELECT public.get_current_user_role()) = 'ADMIN');
 
 -- ---- TAGS ----
 
@@ -530,6 +532,65 @@ CREATE POLICY review_logs_insert_own
   ON public.review_logs FOR INSERT
   TO authenticated
   WITH CHECK (user_id = (SELECT auth.uid()));
+
+-- ---------------------------------------------------------------------------
+-- 7a. Data API Grants
+-- ---------------------------------------------------------------------------
+-- Explicit grants keep table/function reachability independent of Supabase
+-- project-level default privilege settings. RLS still controls row access.
+
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+GRANT SELECT ON TABLE
+  public.tags,
+  public.words,
+  public.word_tags,
+  public.definitions,
+  public.examples,
+  public.flashcards
+TO anon;
+
+GRANT SELECT ON TABLE
+  public.profiles,
+  public.tags,
+  public.words,
+  public.word_tags,
+  public.definitions,
+  public.examples,
+  public.flashcards,
+  public.user_flashcard_states,
+  public.review_logs
+TO authenticated;
+
+GRANT INSERT, UPDATE ON TABLE
+  public.tags,
+  public.words,
+  public.word_tags,
+  public.definitions,
+  public.examples,
+  public.flashcards,
+  public.user_flashcard_states
+TO authenticated;
+
+GRANT INSERT ON TABLE
+  public.review_logs
+TO authenticated;
+
+GRANT DELETE ON TABLE
+  public.word_tags
+TO authenticated;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+  public.profiles,
+  public.tags,
+  public.words,
+  public.word_tags,
+  public.definitions,
+  public.examples,
+  public.flashcards,
+  public.user_flashcard_states,
+  public.review_logs
+TO service_role;
 
 -- ---------------------------------------------------------------------------
 -- 8. Admin Verification Query

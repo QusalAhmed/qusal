@@ -10,9 +10,11 @@
 
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { TextInput, Badge } from "@mantine/core";
-import { BookOpen, Search, Volume2 } from "lucide-react";
+import { TextInput, Badge, Button } from "@mantine/core";
+import { BookOpen, Search, Volume2, Plus } from "lucide-react";
 import { usePowerSyncQuery } from "@/hooks/usePowerSyncQuery";
+import { useAuth } from "@/hooks/useAuth";
+import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 
 interface WordRow {
@@ -25,6 +27,7 @@ interface WordRow {
 
 export default function WordsPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
 
   // Query words with definition count and tags
   const { data: words } = usePowerSyncQuery<WordRow>(
@@ -74,6 +77,18 @@ export default function WordsPage() {
               in the knowledge base
             </p>
           </div>
+
+          {user && (
+            <Button
+              component={Link}
+              href="/words/new"
+              leftSection={<Plus size={16} />}
+              variant="gradient"
+              gradient={{ from: "indigo", to: "violet" }}
+            >
+              Add Word
+            </Button>
+          )}
         </motion.div>
 
         {/* Search */}
@@ -108,68 +123,72 @@ export default function WordsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.3 }}
-                className="card-hover rounded-xl bg-[var(--color-surface-raised)] border border-[var(--color-border)] p-4 cursor-pointer"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 rounded-lg bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] shrink-0">
-                      <BookOpen
-                        size={16}
-                        className="text-indigo-400"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-semibold text-white truncate">
-                          {word.word}
-                        </span>
-                        {word.phonetics && (
-                          <span className="text-xs text-[var(--color-text-tertiary)] font-mono hidden sm:inline">
-                            {word.phonetics}
+                <Link
+                  href={`/words/${word.id}`}
+                  className="block card-hover rounded-xl bg-[var(--color-surface-raised)] border border-[var(--color-border)] p-4 cursor-pointer no-underline"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="p-2 rounded-lg bg-[var(--color-surface-overlay)] border border-[var(--color-border-subtle)] shrink-0">
+                        <BookOpen
+                          size={16}
+                          className="text-indigo-400"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-semibold text-white truncate">
+                            {word.word}
                           </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-[var(--color-text-tertiary)]">
-                          {word.definition_count} definition
-                          {word.definition_count !== 1 ? "s" : ""}
-                        </span>
-                        {word.tag_names && (
-                          <div className="flex items-center gap-1 overflow-hidden">
-                            {word.tag_names
-                              .split(", ")
-                              .slice(0, 3)
-                              .map((tag) => (
-                                <Badge
-                                  key={tag}
-                                  size="xs"
-                                  variant="outline"
-                                  color="indigo"
-                                  className="shrink-0"
-                                >
-                                  {tag}
-                                </Badge>
-                              ))}
-                            {word.tag_names.split(", ").length > 3 && (
-                              <span className="text-xs text-[var(--color-text-tertiary)]">
-                                +{word.tag_names.split(", ").length - 3}
-                              </span>
-                            )}
-                          </div>
-                        )}
+                          {word.phonetics && (
+                            <span className="text-xs text-[var(--color-text-tertiary)] font-mono hidden sm:inline">
+                              {word.phonetics}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-[var(--color-text-tertiary)]">
+                            {word.definition_count} definition
+                            {word.definition_count !== 1 ? "s" : ""}
+                          </span>
+                          {word.tag_names && (
+                            <div className="flex items-center gap-1 overflow-hidden">
+                              {word.tag_names
+                                .split(", ")
+                                .slice(0, 3)
+                                .map((tag) => (
+                                  <Badge
+                                    key={tag}
+                                    size="xs"
+                                    variant="outline"
+                                    color="indigo"
+                                    className="shrink-0"
+                                  >
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              {word.tag_names.split(", ").length > 3 && (
+                                <span className="text-xs text-[var(--color-text-tertiary)]">
+                                  +{word.tag_names.split(", ").length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {word.phonetics && (
-                    <button
-                      className="p-2 rounded-lg text-[var(--color-text-tertiary)] hover:text-white hover:bg-[var(--color-surface-overlay)] transition-colors shrink-0"
-                      title="Play pronunciation"
-                    >
-                      <Volume2 size={16} />
-                    </button>
-                  )}
-                </div>
+                    {word.phonetics && (
+                      <div
+                        className="p-2 rounded-lg text-[var(--color-text-tertiary)] hover:text-white hover:bg-[var(--color-surface-overlay)] transition-colors shrink-0"
+                        title="Play pronunciation"
+                      >
+                        <Volume2 size={16} />
+                      </div>
+                    )}
+                  </div>
+                </Link>
               </motion.div>
             ))}
           </AnimatePresence>
