@@ -14,7 +14,7 @@
 // Minimal interface for the PowerSync database methods we use.
 interface PowerSyncDB {
   execute(sql: string, params?: unknown[]): Promise<{ rowsAffected?: number }>;
-  getOptional<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
+  getOptional<T>(sql: string, params?: unknown[]): Promise<T | null | undefined>;
   getAll<T>(sql: string, params?: unknown[]): Promise<T[]>;
   writeTransaction<T>(callback: (tx: PowerSyncTx) => Promise<T>): Promise<T>;
 }

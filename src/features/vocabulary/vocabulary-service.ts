@@ -20,7 +20,7 @@ import type { PartOfSpeech, QuizMode } from "@/types";
 // Avoids importing from @powersync/web which causes type conflicts with @powersync/common.
 interface PowerSyncDB {
   execute(sql: string, params?: unknown[]): Promise<{ rowsAffected?: number }>;
-  getOptional<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
+  getOptional<T>(sql: string, params?: unknown[]): Promise<T | null | undefined>;
   getAll<T>(sql: string, params?: unknown[]): Promise<T[]>;
   writeTransaction<T>(callback: (tx: PowerSyncTx) => Promise<T>): Promise<T>;
 }
