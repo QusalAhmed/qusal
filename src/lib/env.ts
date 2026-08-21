@@ -27,6 +27,9 @@ const publicEnvSchema = z.object({
     .string()
     .min(1, "NEXT_PUBLIC_SUPABASE_ANON_KEY is required"),
   NEXT_PUBLIC_POWERSYNC_URL: z.url("NEXT_PUBLIC_POWERSYNC_URL must be a valid URL"),
+  NEXT_PUBLIC_AI_PROVIDER: z
+    .enum(["gemma", "cloudflare"])
+    .default("gemma"),
 });
 
 /**
@@ -37,6 +40,7 @@ export const publicEnv = publicEnvSchema.parse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   NEXT_PUBLIC_POWERSYNC_URL: process.env.NEXT_PUBLIC_POWERSYNC_URL,
+  NEXT_PUBLIC_AI_PROVIDER: process.env.NEXT_PUBLIC_AI_PROVIDER,
 });
 
 // ---------------------------------------------------------------------------
@@ -47,6 +51,10 @@ const serverEnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z
     .string()
     .min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
+  // AI Provider Keys — validated at runtime based on active provider
+  GOOGLE_AI_API_KEY: z.string().optional().default(""),
+  CLOUDFLARE_ACCOUNT_ID: z.string().optional().default(""),
+  CLOUDFLARE_AI_API_TOKEN: z.string().optional().default(""),
 });
 
 /**
@@ -66,6 +74,9 @@ function getServerEnv(): z.infer<typeof serverEnvSchema> {
 
   return serverEnvSchema.parse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    GOOGLE_AI_API_KEY: process.env.GOOGLE_AI_API_KEY,
+    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_AI_API_TOKEN: process.env.CLOUDFLARE_AI_API_TOKEN,
   });
 }
 

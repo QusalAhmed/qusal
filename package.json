@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/genai": "^2.18.0",
     "@hookform/resolvers": "^5.8.0",
     "@journeyapps/wa-sqlite": "^2.0.3",
     "@mantine/core": "^9.5.1",

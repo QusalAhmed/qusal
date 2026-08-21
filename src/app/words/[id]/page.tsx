@@ -42,6 +42,7 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { TiptapViewer } from "@/components/forms/TiptapEditor";
+import { GenerateExamplesButton } from "@/components/vocabulary/GenerateExamplesButton";
 import { useAuth } from "@/hooks/useAuth";
 import { usePowerSyncProvider } from "@/lib/powersync/PowerSyncProvider";
 import {
@@ -474,8 +475,27 @@ export default function WordDetailPage() {
                   </div>
                 )}
 
-                {/* Examples */}
-                {def.examples.length > 0 && (
+                {/* Examples + Generate Button */}
+                {user && (
+                  <div className="mt-4">
+                    <GenerateExamplesButton
+                      definitionId={def.id}
+                      word={wordDetails.word}
+                      meaning={def.meaning}
+                      partOfSpeech={def.part_of_speech}
+                      requestedCount={def.requested_ai_example_count || 3}
+                      existingExamples={def.examples.map((e) => ({
+                        id: e.id,
+                        sentence: e.sentence,
+                        is_ai_generated: e.is_ai_generated ? 1 : 0,
+                        created_at: e.created_at,
+                      }))}
+                    />
+                  </div>
+                )}
+
+                {/* Read-only examples for unauthenticated users */}
+                {!user && def.examples.length > 0 && (
                   <div className="mt-4">
                     <Text size="xs" c="dimmed" mb="xs" fw={600}>
                       Examples
@@ -502,21 +522,6 @@ export default function WordDetailPage() {
                     </Stack>
                   </div>
                 )}
-
-                {/* AI Example Request Info */}
-                {def.requested_ai_example_count > 0 &&
-                  def.examples.filter((e) => e.is_ai_generated).length <
-                    def.requested_ai_example_count && (
-                    <div className="mt-3 flex items-center gap-1.5 text-xs text-amber-400/70">
-                      <Sparkles size={12} />
-                      <span>
-                        {def.requested_ai_example_count -
-                          def.examples.filter((e) => e.is_ai_generated)
-                            .length}{" "}
-                        AI example(s) pending generation
-                      </span>
-                    </div>
-                  )}
               </div>
             </motion.div>
           ))}

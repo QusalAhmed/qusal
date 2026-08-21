@@ -545,6 +545,57 @@ export function createVocabularyService(db: PowerSyncDB) {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // AI-Generated Examples
+  // -------------------------------------------------------------------------
+
+  /**
+   * Save AI-generated example sentences for a definition.
+   * Inserts all sentences in a single transaction.
+   */
+  async function saveGeneratedExamples(
+    definitionId: string,
+    sentences: string[]
+  ): Promise<string[]> {
+    const now = new Date().toISOString();
+    const ids: string[] = [];
+
+    await db.writeTransaction(async (tx: PowerSyncTx) => {
+      for (const sentence of sentences) {
+        const id = crypto.randomUUID();
+        ids.push(id);
+
+        await tx.execute(
+          `INSERT INTO examples (id, definition_id, sentence, is_ai_generated, created_at, updated_at, version)
+           VALUES (?, ?, ?, 1, ?, ?, 1)`,
+          [id, definitionId, sentence.trim(), now, now]
+        );
+      }
+    });
+
+    return ids;
+  }
+
+  /**
+   * Get all non-deleted examples for a definition.
+   */
+  async function getExamplesForDefinition(
+    definitionId: string
+  ): Promise<Array<{ id: string; sentence: string; is_ai_generated: number; created_at: string }>> {
+    return db.getAll<{
+      id: string;
+      sentence: string;
+      is_ai_generated: number;
+      created_at: string;
+    }>(
+      `SELECT id, sentence, is_ai_generated, created_at
+       FROM examples
+       WHERE definition_id = ? AND deleted_at IS NULL
+       ORDER BY created_at ASC`,
+      [definitionId]
+    );
+  }
+
   return {
     checkDuplicateWord,
     createWordWithDefinitions,
@@ -557,6 +608,8 @@ export function createVocabularyService(db: PowerSyncDB) {
     removeTagFromWord,
     setWordTags,
     getWordWithDetails,
+    saveGeneratedExamples,
+    getExamplesForDefinition,
   };
 }
 
