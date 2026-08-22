@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
+  Brain,
   LayoutDashboard,
   LogIn,
   LogOut,
@@ -47,6 +48,12 @@ const navLinks: NavLinkItem[] = [
     href: "/words",
     label: "Words",
     icon: <BookOpen size={18} />,
+  },
+  {
+    href: "/review",
+    label: "Review",
+    icon: <Brain size={18} />,
+    requiresAuth: true,
   },
   {
     href: "/admin/users",

@@ -13,6 +13,7 @@ import {
   BookOpen,
   Brain,
   Layers,
+  Play,
   Tag,
   TrendingUp,
   Zap,
@@ -20,6 +21,7 @@ import {
 import { usePowerSyncQuery } from "@/hooks/usePowerSyncQuery";
 import { useAuth } from "@/hooks/useAuth";
 import { AppShell } from "@/components/layout/AppShell";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
@@ -265,6 +267,44 @@ export default function DashboardPage() {
             delay={0.25}
           />
         </div>
+
+        {/* Due for Review CTA */}
+        {user && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+          >
+            <div className="rounded-2xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 p-6">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-indigo-500/20">
+                    <Brain size={24} className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">
+                      Ready to Review
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      {flashcardCount > 0
+                        ? `${flashcardCount} flashcards in your collection`
+                        : "Add words to start building flashcards"}
+                    </p>
+                  </div>
+                </div>
+                {flashcardCount > 0 && (
+                  <Link
+                    href="/review"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-indigo-500 to-violet-600 text-white hover:from-indigo-400 hover:to-violet-500 shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all"
+                  >
+                    <Play size={16} />
+                    Start Review
+                  </Link>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Decks Section */}
         {user && (
